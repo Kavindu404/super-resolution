@@ -5,8 +5,6 @@ import xarray as xr
 import torch
 from utils import get_dataset
 from resize_transforms import ResizeTensor
-from replace_nans import ReplaceNanWithZeros
-
 from os.path import join
 
 years = [2010]
