@@ -6,7 +6,7 @@ import glob
 import os   
 from resize_transforms import ResizeTensor
 
-def get_dataset(pths):
+def get_data(pths):
     data_tensors = []
 
     for pth in pths:
