@@ -21,23 +21,23 @@ class ConvBlock(nn.Module):
         super(ConvBlock, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.prelu = nn.PReLU()
 
     def forward(self, x):
-        return self.relu(self.bn(self.conv(x)))
+        return self.prelu(self.bn(self.conv(x)))
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm2d(channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.prelu = nn.PReLU()
         self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(channels)
 
     def forward(self, x):
         residual = x
-        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.prelu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         out += residual
         return out
@@ -87,7 +87,7 @@ class UNetSR(nn.Module):
             ConvBlock(num_filters * 4, num_filters * 2),
             ConvBlock(num_filters * 2, num_filters)
         ])
-
+        self.upscale_layer = PixelShuffleBlock(num_filters, num_filters, upscale_factor=2)
         self.conv_output = nn.Conv2d(num_filters, out_channels, kernel_size=3, padding=1)
 
     def forward(self, x):
@@ -107,7 +107,7 @@ class UNetSR(nn.Module):
             encoder_feature = att_block(encoder_feature) * encoder_feature
             x = torch.cat([x, encoder_feature], dim=1)
             x = conv_block(x)
-
+        x = self.upscale_layer(x)
         output = self.conv_output(x)
 
         return output
