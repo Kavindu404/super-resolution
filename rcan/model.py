@@ -2,6 +2,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class MeanShift(nn.Conv2d):
+    def __init__(
+        self,
+        channel_range,
+        channel_mean=(-0.006512, 0.004684, 0.020584),
+        channel_std=(0.270235, 0.101136, 0.130661),
+        sign=-1,
+    ):
+        super(MeanShift, self).__init__(3, 3, kernel_size=1)
+        std = torch.Tensor(channel_std)
+        self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
+        self.bias.data = sign * channel_range * torch.Tensor(channel_mean) / std
+        for p in self.parameters():
+            p.requires_grad = False
+
+
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
         super(SpatialAttention, self).__init__()
@@ -56,6 +72,9 @@ class PixelShuffleBlock(nn.Module):
 class UNetSR(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, num_filters=64, upscale_factor=4):
         super(UNetSR, self).__init__()
+        self.channel_range = 4
+        self.sub_mean = MeanShift(self.channel_range)
+        self.add_mean = MeanShift(self.channel_range, sign=1)
         self.upscale_factor = upscale_factor
 
         self.encoder_blocks = nn.ModuleList([
@@ -87,12 +106,12 @@ class UNetSR(nn.Module):
             ConvBlock(num_filters * 4, num_filters * 2),
             ConvBlock(num_filters * 2, num_filters)
         ])
-        self.upscale_layer = PixelShuffleBlock(num_filters, num_filters, upscale_factor=2)
+        self.upscale_layer = PixelShuffleBlock(num_filters, num_filters, upscale_factor=upscale_factor)
         self.conv_output = nn.Conv2d(num_filters, out_channels, kernel_size=3, padding=1)
 
     def forward(self, x):
         encoder_features = []
-
+        x = self.sub_mean(x)
         for encoder_block in self.encoder_blocks:
             x = encoder_block(x)
             encoder_features.append(x)
@@ -108,6 +127,7 @@ class UNetSR(nn.Module):
             x = torch.cat([x, encoder_feature], dim=1)
             x = conv_block(x)
         x = self.upscale_layer(x)
-        output = self.conv_output(x)
+        x = self.conv_output(x)
+        x = self.add_mean(x)/self.channel_range
 
-        return output
+        return x
