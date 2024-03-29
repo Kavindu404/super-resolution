@@ -4,12 +4,15 @@ import json
 import argparse
 from rcan.utils import get_data
 from torch.utils.tensorboard import SummaryWriter
-from rcan.model import UNetSR
-from rcan.resize_transforms import ResizeTensor
+import torch.optim as optim
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DataParallel
+from rcan.model import UNetSR
+from rcan.resize_transforms import ResizeTensor
 from rcan.dataset import SRDataset
 from rcan.loss import nll_loss
+from rcan.metric import accuracy
 
 
 if __name__ == "__main__":
@@ -94,6 +97,59 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     model.to(device)
+
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=20, verbose=True)
+    best_acc = 0.0
+    for epoch in range(num_epochs):
+        model.train()
+        train_loss = 0.0
+        train_acc = 0.0
+         
+        for X, y in train_dl:
+            X, y = X.to(device), y.to(device)
+            optimizer.zero_grad()
+            outputs = model(X)
+            loss = criterion(outputs, y)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item() * X.size(0)
+            _, y_pred = torch.max(outputs, 1)
+        train_loss /= len(train_ds)
+        train_acc = accuracy(y_pred, y)
+
+        model.eval()
+        test_loss = 0.0
+        test_acc = 0.0
+        y_true = []
+        y_preds = []
+        with torch.no_grad():
+            for X, y in val_dl:
+                X, y = X.to(device), y.to(device)
+                outputs = model(X)
+                
+                loss = criterion(outputs, y)
+                test_loss += loss.item() * X.size(0)
+                _, y_prd = torch.max(outputs, 1)
+            test_loss /= len(val_dl)
+            acc = accuracy(y_preds, y_true)
+
+            if acc > best_acc:
+                best_acc = acc
+                pres = round(best_acc, 4)
+                if isinstance(model, nn.DataParallel):
+                    model_state_dict = model.module.state_dict()
+                else:
+                    model_state_dict = model.state_dict()
+                torch.save(model, ckpt_dir+"srnet_"+str(pres)+".pt")
+
+            scheduler.step(acc)
+            
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            writer.add_scalar('Accuracy/train', train_acc, epoch)
+            writer.add_scalar('Loss/val', test_loss, epoch)
+            writer.add_scalar('Acc/val', acc, epoch)
+
+            print(f"Epoch {epoch+1}, train_loss: {train_loss:.4f}, val_loss: {test_loss:.4f}, train accuracy: {train_acc}, val accuracy:{acc:.4f}")
     
 
 
