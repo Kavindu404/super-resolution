@@ -6,3 +6,4 @@ std_values_2020_22.txt
 rcan/__pycache__/model.cpython-312.pyc
 rcan/__pycache__/utils.cpython-312.pyc
 rcan/__pycache__
+model_meta.json
